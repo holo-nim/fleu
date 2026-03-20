@@ -19,18 +19,18 @@ proc unlockFlush*(writer: var HoloWriter) {.inline.} =
   doAssert writer.flushLocks > 0, "unpaired flush unlock"
   dec writer.flushLocks
 
-proc startDump*(writer: var HoloWriter, artery: Artery) {.inline.} =
+proc startWrite*(writer: var HoloWriter, artery: Artery) {.inline.} =
   writer.artery = artery
   writer.flushLocks = 0
   writer.flushPos = 0
 
-proc startDump*(writer: var HoloWriter, bufferCapacity = 16) {.inline.} =
-  writer.startDump(Artery(buffer: newStringOfCap(bufferCapacity), bufferConsumer: nil))
+proc startWrite*(writer: var HoloWriter, bufferCapacity = 16) {.inline.} =
+  writer.startWrite(Artery(buffer: newStringOfCap(bufferCapacity), bufferConsumer: nil))
 
-proc startDump*(writer: var HoloWriter, stream: Stream) {.inline.} =
-  writer.startDump(initArtery(stream))
+proc startWrite*(writer: var HoloWriter, stream: Stream) {.inline.} =
+  writer.startWrite(initArtery(stream))
 
-proc finishDump*(writer: var HoloWriter): string {.inline.} =
+proc finishWrite*(writer: var HoloWriter): string {.inline.} =
   ## returns leftover buffer
   doAssert writer.flushLocks == 0, "unpaired flush lock"
   writer.flushPos += writer.artery.consumeBufferFull(writer.flushPos)
