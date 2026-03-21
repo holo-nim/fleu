@@ -1,80 +1,120 @@
-import hemodyne/syncvein, std/[streams, unicode]
+import ./stringresize
+import std/[streams, unicode] # just to expose API otherwise not used
 
-const holoflowLineColumn* {.booldefine.} = true
+const holoReaderLineColumn* {.booldefine.} = true
   ## enables/disables line column tracking by default, has very little impact on performance
 
-type HoloReader* = object
-  doLineColumn*: bool = holoflowLineColumn
-  vein*: Vein
-  bufferLocks*: int
-  bufferPos*: int
-  line*, column*: int
+type
+  BufferLoader* = proc (): string
+  HoloReader* = object
+    doLineColumn*: bool = holoReaderLineColumn
+    buffer*: string
+      ## buffer string, users need to access directly & keep track of position
+    bufferLoader*: BufferLoader
+      ## loads a string at a time to add to the buffer when needed
+      ## set to nil after returning empty string
+    freeBefore*: int
+      ## position before which we can cull the buffer
+    bufferLocks*: int
+    bufferPos*: int
+    line*, column*: int
 
 {.push checks: off, stacktrace: off.}
 
-proc initHoloReader*(doLineColumn = holoflowLineColumn): HoloReader {.inline.} =
+proc initHoloReader*(doLineColumn = holoReaderLineColumn): HoloReader {.inline.} =
   result = HoloReader(doLineColumn: doLineColumn)
 
-template buffer*(reader: HoloReader): string = reader.vein.buffer
-
-proc startRead*(reader: var HoloReader, vein: Vein) {.inline.} =
-  reader.vein = vein
+template startReadImpl() =
   reader.bufferPos = -1
   reader.bufferLocks = 0
   reader.line = 1
   reader.column = 1
 
 proc startRead*(reader: var HoloReader, str: string) {.inline.} =
-  reader.startRead(initVein(str))
+  reader.buffer = str
+  reader.bufferLoader = nil
+  startReadImpl()
 
-proc startRead*(reader: var HoloReader, stream: Stream, loadAmount = 4) {.inline.} =
-  reader.startRead(initVein(stream, loadAmount))
+proc startRead*(reader: var HoloReader, loader: BufferLoader, bufferCapacity = 32) {.inline.} =
+  reader.buffer = newStringOfCap(bufferCapacity)
+  reader.bufferLoader = loader
+
+proc startRead*(reader: var HoloReader, stream: Stream, loadAmount = 16, bufferCapacity = 32) {.inline.} =
+  let loader = proc (): string =
+    readStr(stream, loadAmount)
+  reader.startRead(loader, bufferCapacity)
 
 proc loadBufferOne*(reader: var HoloReader) {.inline.} =
-  let remove = reader.vein.loadBufferOne()
-  reader.bufferPos -= remove
+  if not reader.bufferLoader.isNil:
+    let ex = reader.bufferLoader()
+    if ex.len == 0:
+      reader.bufferLoader = nil
+      return
+    let moved = reader.buffer.smartResizeAdd(ex, reader.freeBefore)
+    if moved:
+      reader.bufferPos -= reader.freeBefore
+      reader.freeBefore = 0
 
 proc loadBufferBy*(reader: var HoloReader, n: int) {.inline.} =
-  let remove = reader.vein.loadBufferBy(n)
-  reader.bufferPos -= remove
+  if not reader.bufferLoader.isNil:
+    var left = n
+    while left > 0:
+      let ex = reader.bufferLoader()
+      if ex.len == 0:
+        reader.bufferLoader = nil
+        return
+      let moved = reader.buffer.smartResizeAdd(ex, reader.freeBefore)
+      if moved:
+        reader.bufferPos -= reader.freeBefore
+        reader.freeBefore = 0
+      left -= ex.len
 
 proc peek*(reader: var HoloReader, c: var char): bool {.inline.} =
   let nextPos = reader.bufferPos + 1
-  if nextPos < reader.vein.buffer.len:
-    c = reader.vein.buffer[nextPos]
+  if nextPos < reader.buffer.len:
+    c = reader.buffer[nextPos]
     result = true
+  elif reader.bufferLoader.isNil:
+    result = false
   else:
     reader.loadBufferOne()
-    if nextPos < reader.vein.buffer.len:
-      c = reader.vein.buffer[nextPos]
+    if nextPos < reader.buffer.len:
+      c = reader.buffer[nextPos]
       result = true
     else:
       result = false
 
 proc unsafePeek*(reader: var HoloReader): char {.inline.} =
-  result = reader.vein.buffer[reader.bufferPos + 1]
+  result = reader.buffer[reader.bufferPos + 1]
 
 proc peek*(reader: var HoloReader, c: var char, offset: int): bool {.inline.} =
   let nextPos = reader.bufferPos + 1 + offset
-  if nextPos < reader.vein.buffer.len:
-    c = reader.vein.buffer[nextPos]
+  if nextPos < reader.buffer.len:
+    c = reader.buffer[nextPos]
     result = true
+  elif reader.bufferLoader.isNil:
+    result = false
   else:
     reader.loadBufferBy(1 + offset)
-    if nextPos < reader.vein.buffer.len:
-      c = reader.vein.buffer[nextPos]
+    if nextPos < reader.buffer.len:
+      c = reader.buffer[nextPos]
       result = true
     else:
       result = false
 
 proc unsafePeek*(reader: var HoloReader, offset: int): char {.inline.} =
-  result = reader.vein.buffer[reader.bufferPos + 1 + offset]
+  result = reader.buffer[reader.bufferPos + 1 + offset]
 
-proc peek*(reader: var HoloReader, rune: var Rune): bool {.inline.} =
+template prepareBuffer(reader: var HoloReader, n: int, offset = 0) =
+  if not reader.bufferLoader.isNil:
+    if reader.bufferPos + n + offset >= reader.buffer.len:
+      reader.loadBufferBy(n)
+
+proc peekCount*(reader: var HoloReader, rune: var Rune): int {.inline.} =
+  ## returns rune size if rune is peeked
   var start: char
-  result = peek(reader, start)
-  if result:
-    result = false
+  if peek(reader, start):
+    result = 0
     let b = start.byte
     var n = 0
     if b shr 5 == 0b110:
@@ -89,21 +129,33 @@ proc peek*(reader: var HoloReader, rune: var Rune): bool {.inline.} =
       n = 5
     else:
       return
-    if reader.bufferPos + 1 + n >= reader.vein.buffer.len:
-      reader.loadBufferBy(n)
-    if reader.bufferPos + 1 + n < reader.vein.buffer.len:
-      result = true
-      fastRuneAt(reader.vein.buffer, reader.bufferPos + 1, rune, doInc = false)
+    prepareBuffer(reader, n, offset = 1)
+    if reader.bufferPos + 1 + n < reader.buffer.len:
+      result = n
+      fastRuneAt(reader.buffer, reader.bufferPos + 1, rune, doInc = false)
+
+proc peek*(reader: var HoloReader, rune: var Rune): bool {.inline.} =
+  result = peekCount(reader, rune) != 0
+
+const holoReaderPeekStrCopyMem* {.booldefine.} = false
+  ## possible minor optimization, seems slightly slower in practice 
 
 template peekStrImpl(reader: var HoloReader, cs) =
   result = false
   let n = cs.len
-  if reader.bufferPos + n >= reader.vein.buffer.len:
-    reader.loadBufferBy(n)
-  if reader.bufferPos + n < reader.vein.buffer.len:
+  prepareBuffer(reader, n)
+  let bpos = reader.bufferPos
+  if bpos + n < reader.buffer.len:
     result = true
-    for i in 0 ..< n:
-      cs[i] = reader.vein.buffer[reader.bufferPos + 1 + i]
+    when nimvm:
+      for i in 0 ..< n:
+        cs[i] = reader.buffer[bpos + 1 + i]
+    else:
+      when not holoReaderPeekStrCopyMem or defined(js) or defined(nimscript):
+        for i in 0 ..< n:
+          cs[i] = reader.buffer[bpos + 1 + i]
+      else:
+        copyMem(addr cs[0], addr reader.buffer[bpos + 1], n)
 
 proc peek*(reader: var HoloReader, cs: var openArray[char]): bool {.inline.} =
   peekStrImpl(reader, cs)
@@ -135,32 +187,32 @@ proc unsafeNext*(reader: var HoloReader) {.inline.} =
   let prevPos = reader.bufferPos
   inc reader.bufferPos
   if reader.doLineColumn:
-    let c = reader.vein.buffer[reader.bufferPos]
+    let c = reader.buffer[reader.bufferPos]
     if c == '\n' or (c == '\r' and reader.peekOrZero() != '\n'):
       inc reader.line
       reader.column = 1
     else:
       inc reader.column
-  if reader.bufferLocks == 0: reader.vein.setFreeBefore(prevPos)
+  if reader.bufferLocks == 0: reader.freeBefore = prevPos
 
 proc unsafeNextBy*(reader: var HoloReader, n: int) {.inline.} =
   # keep separate from next for now
   inc reader.bufferPos, n
   if reader.doLineColumn:
     for i in reader.bufferPos - n + 1 ..< reader.bufferPos:
-      let c = reader.vein.buffer[i]
-      if c == '\n' or (c == '\r' and reader.vein.buffer[i + 1] != '\n'):
+      let c = reader.buffer[i]
+      if c == '\n' or (c == '\r' and reader.buffer[i + 1] != '\n'):
         inc reader.line
         reader.column = 1
       else:
         inc reader.column
-    let cf = reader.vein.buffer[reader.bufferPos]
+    let cf = reader.buffer[reader.bufferPos]
     if cf == '\n' or (cf == '\r' and reader.peekOrZero() != '\n'):
       inc reader.line
       reader.column = 1
     else:
       inc reader.column
-  if reader.bufferLocks == 0: reader.vein.setFreeBefore(reader.bufferPos - 1)
+  if reader.bufferLocks == 0: reader.freeBefore = reader.bufferPos - 1
 
 proc next*(reader: var HoloReader, c: var char): bool {.inline.} =
   # keep separate from unsafeNext for now
@@ -174,21 +226,22 @@ proc next*(reader: var HoloReader, c: var char): bool {.inline.} =
       reader.column = 1
     else:
       inc reader.column
-  if reader.bufferLocks == 0: reader.vein.setFreeBefore(prevPos)
+  if reader.bufferLocks == 0: reader.freeBefore = prevPos
   result = true
 
 proc next*(reader: var HoloReader, rune: var Rune): bool {.inline.} =
-  if not peek(reader, rune):
+  let size = peekCount(reader, rune)
+  if size == 0:
     return false
   let prevPos = reader.bufferPos
-  inc reader.bufferPos, size(rune)
+  inc reader.bufferPos, size
   if reader.doLineColumn:
     if rune == Rune('\n') or (rune == Rune('\r') and reader.peekOrZero() != '\n'):
       inc reader.line
       reader.column = 1
     else:
       inc reader.column
-  if reader.bufferLocks == 0: reader.vein.setFreeBefore(prevPos)
+  if reader.bufferLocks == 0: reader.freeBefore = prevPos
   result = true
 
 proc next*(reader: var HoloReader): bool {.inline.} =
@@ -214,10 +267,10 @@ proc nextMatch*(reader: var HoloReader, c: char): bool {.inline.} =
     reader.unsafeNext()
 
 proc peekMatch*(reader: var HoloReader, c: char, offset: int): bool {.inline.} =
-  if reader.bufferPos + 1 + offset >= reader.vein.buffer.len:
-    reader.loadBufferBy(1 + offset)
-  if reader.bufferPos + 1 + offset < reader.vein.buffer.len:
-    if c != reader.vein.buffer[reader.bufferPos + 1 + offset]:
+  prepareBuffer(reader, 1 + offset)
+  let bpos = reader.bufferPos
+  if bpos + 1 + offset < reader.buffer.len:
+    if c != reader.buffer[bpos + 1 + offset]:
       return false
     result = true
   else:
@@ -255,10 +308,10 @@ proc nextMatch*(reader: var HoloReader, cs: set[char]): bool {.inline.} =
   result = reader.nextMatch(cs, dummy)
 
 proc peekMatch*(reader: var HoloReader, cs: set[char], offset: int, c: var char): bool {.inline.} =
-  if reader.bufferPos + 1 + offset >= reader.vein.buffer.len:
-    reader.loadBufferBy(1 + offset)
-  if reader.bufferPos + 1 + offset < reader.vein.buffer.len:
-    let c2 = reader.vein.buffer[reader.bufferPos + 1 + offset]
+  prepareBuffer(reader, 1 + offset)
+  let bpos = reader.bufferPos
+  if bpos + 1 + offset < reader.buffer.len:
+    let c2 = reader.buffer[bpos + 1 + offset]
     if c2 in cs:
       c = c2
       return true
@@ -271,11 +324,11 @@ proc peekMatch*(reader: var HoloReader, cs: set[char], offset: int): bool {.inli
   result = reader.peekMatch(cs, offset, dummy)
 
 template peekMatchStrImpl(reader: var HoloReader, str) =
-  if reader.bufferPos + str.len >= reader.vein.buffer.len:
-    reader.loadBufferBy(str.len)
-  if reader.bufferPos + str.len < reader.vein.buffer.len:
+  prepareBuffer(reader, str.len)
+  let bpos = reader.bufferPos
+  if bpos + str.len < reader.buffer.len:
     for i in 0 ..< str.len:
-      if str[i] != reader.vein.buffer[reader.bufferPos + 1 + i]:
+      if str[i] != reader.buffer[bpos + 1 + i]:
         return false
     result = true
   else:
