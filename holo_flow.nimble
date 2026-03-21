@@ -10,7 +10,6 @@ srcDir        = "src"
 # Dependencies
 
 requires "nim >= 1.6.0"
-requires "https://github.com/metagn/hemodyne#HEAD"
 
 when (NimMajor, NimMinor) >= (1, 4):
   when (compiles do: import nimbleutils):
