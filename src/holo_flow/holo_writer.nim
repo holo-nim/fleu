@@ -107,7 +107,11 @@ proc write*(writer: var HoloWriter, c: Rune) {.inline.} =
   writer.addToBuffer(c)
   writer.consumeBuffer()
 
-proc write*(writer: var HoloWriter, s: sink string) {.inline.} =
+proc write*(writer: var HoloWriter, s: string) {.inline.} =
+  writer.addToBuffer(s)
+  writer.consumeBuffer()
+
+proc write*(writer: var HoloWriter, s: openArray[char]) {.inline.} =
   writer.addToBuffer(s)
   writer.consumeBuffer()
 
