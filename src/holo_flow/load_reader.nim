@@ -1,6 +1,9 @@
 import ./[load_buffer, reader_common]
 import std/[streams, unicode] # just to expose API otherwise not used
 
+when holoReaderDisableLineColumn:
+  export doLineColumn, line, column
+
 type
   LoadState* = object
     buffer*: LoadBuffer
@@ -177,54 +180,58 @@ proc unlockBuffer*(reader: var LoadReader) {.inline.} =
 proc unsafeNext*(reader: var LoadReader) {.inline.} =
   let prevPos = reader.state.pos
   inc reader.state.pos
-  if reader.state.doLineColumn:
-    let c = reader.load.buffer.data[reader.state.pos]
-    if c == '\n' or (c == '\r' and peekOrZero(reader) != '\n'):
-      inc reader.state.line
-      reader.state.column = 1
-    else:
-      inc reader.state.column
+  when not holoReaderDisableLineColumn:
+    if reader.state.doLineColumn:
+      let c = reader.load.buffer.data[reader.state.pos]
+      if c == '\n' or (c == '\r' and peekOrZero(reader) != '\n'):
+        inc reader.state.line
+        reader.state.column = 1
+      else:
+        inc reader.state.column
   if reader.load.bufferLocks == 0: reader.load.buffer.freeBefore = prevPos
 
 proc unsafeNext*(reader: var LoadReader, last: char) {.inline.} =
   let prevPos = reader.state.pos
   inc reader.state.pos
-  if reader.state.doLineColumn:
-    if last == '\n' or (last == '\r' and peekOrZero(reader) != '\n'):
-      inc reader.state.line
-      reader.state.column = 1
-    else:
-      inc reader.state.column
+  when not holoReaderDisableLineColumn:
+    if reader.state.doLineColumn:
+      if last == '\n' or (last == '\r' and peekOrZero(reader) != '\n'):
+        inc reader.state.line
+        reader.state.column = 1
+      else:
+        inc reader.state.column
   if reader.load.bufferLocks == 0: reader.load.buffer.freeBefore = prevPos
 
 proc unsafeNext*(reader: var LoadReader, last: Rune) {.inline.} =
   let prevPos = reader.state.pos
   inc reader.state.pos
-  if reader.state.doLineColumn:
-    if last == Rune('\n') or (last == Rune('\r') and peekOrZero(reader) != '\n'):
-      inc reader.state.line
-      reader.state.column = 1
-    else:
-      inc reader.state.column
+  when not holoReaderDisableLineColumn:
+    if reader.state.doLineColumn:
+      if last == Rune('\n') or (last == Rune('\r') and peekOrZero(reader) != '\n'):
+        inc reader.state.line
+        reader.state.column = 1
+      else:
+        inc reader.state.column
   if reader.load.bufferLocks == 0: reader.load.buffer.freeBefore = prevPos
 
 proc unsafeNextBy*(reader: var LoadReader, n: int) {.inline.} =
   # keep separate from next for now
   inc reader.state.pos, n
-  if reader.state.doLineColumn:
-    for i in reader.state.pos - n + 1 ..< reader.state.pos:
-      let c = reader.currentBuffer[i]
-      if c == '\n' or (c == '\r' and reader.currentBuffer[i + 1] != '\n'):
+  when not holoReaderDisableLineColumn:
+    if reader.state.doLineColumn:
+      for i in reader.state.pos - n + 1 ..< reader.state.pos:
+        let c = reader.currentBuffer[i]
+        if c == '\n' or (c == '\r' and reader.currentBuffer[i + 1] != '\n'):
+          inc reader.state.line
+          reader.state.column = 1
+        else:
+          inc reader.state.column
+      let cf = reader.currentBuffer[reader.state.pos]
+      if cf == '\n' or (cf == '\r' and peekOrZero(reader) != '\n'):
         inc reader.state.line
         reader.state.column = 1
       else:
         inc reader.state.column
-    let cf = reader.currentBuffer[reader.state.pos]
-    if cf == '\n' or (cf == '\r' and peekOrZero(reader) != '\n'):
-      inc reader.state.line
-      reader.state.column = 1
-    else:
-      inc reader.state.column
   if reader.load.bufferLocks == 0: reader.load.buffer.freeBefore = reader.state.pos - 1
 
 proc next*(reader: var LoadReader, c: var char): bool {.inline.} =
