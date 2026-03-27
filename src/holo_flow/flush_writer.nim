@@ -7,6 +7,7 @@ type
     bufferLocks*: int
   FlushWriter* = object
     flush*: FlushState
+    # can also add write state that keeps track of line column etc if it was useful
 
 {.push checks: off, stacktrace: off.}
 
