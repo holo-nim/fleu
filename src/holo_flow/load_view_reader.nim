@@ -1,8 +1,7 @@
 import ./[load_reader, load_buffer, reader_common]
 import std/[streams, unicode] # just to expose API otherwise not used
 
-when holoReaderDisableLineColumn:
-  export doLineColumn, line, column
+export doLineColumn, line, column
 
 when defined(js):
   type BufferView* = string

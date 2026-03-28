@@ -1,21 +1,14 @@
 import ./[load_buffer, reader_common]
 import std/[streams, unicode] # just to expose API otherwise not used
 
-when holoReaderDisableLineColumn:
-  export doLineColumn, line, column
+export doLineColumn, line, column
+
+{.push checks: off, stacktrace: off.}
 
 type
   LoadState* = object
     buffer*: LoadBuffer
     bufferLocks*: int
-  LoadReader* = object
-    state*: ReadState
-    load*: LoadState
-
-{.push checks: off, stacktrace: off.}
-
-proc initLoadReader*(doLineColumn = holoReaderLineColumn): LoadReader {.inline.} =
-  result = LoadReader(state: initReadState(doLineColumn))
 
 proc startLoad*(load: var LoadState, str: sink string) {.inline.} =
   load.buffer = initLoadBuffer(str)
@@ -34,6 +27,20 @@ when declared(File):
     ## `file` has to last as long as the loader
     load.buffer = initLoadBuffer(file, loadAmount, bufferCapacity)
     load.bufferLocks = 0
+
+type
+  LoadReader* = object
+    when holoReaderDisableTracking:
+      state*: ReadState
+    else:
+      state*: TrackedReadState
+    load*: LoadState
+
+proc initLoadReader*(doLineColumn = holoReaderLineColumn): LoadReader {.inline.} =
+  when holoReaderDisableTracking:
+    result = LoadReader(state: initReadState(doLineColumn))
+  else:
+    result = LoadReader(state: initTrackedReadState(doLineColumn))
 
 when false:
   type ReaderType = var LoadReader
@@ -183,62 +190,23 @@ proc unlockBuffer*(reader: var LoadReader) {.inline.} =
 
 proc unsafeNext*(reader: var LoadReader) {.inline.} =
   let prevPos = reader.state.pos
-  inc reader.state.pos
-  when not holoReaderDisableLineColumn:
-    if reader.state.doLineColumn:
-      let c = reader.load.buffer.data[reader.state.pos]
-      if c == '\n' or (c == '\r' and peekOrZero(reader) != '\n'):
-        inc reader.state.line
-        reader.state.column = 1
-      else:
-        inc reader.state.column
+  reader.advance(reader.state)
   if reader.load.bufferLocks == 0: reader.load.buffer.freeBefore = prevPos
 
 proc unsafeNext*(reader: var LoadReader, last: char) {.inline.} =
   let prevPos = reader.state.pos
-  inc reader.state.pos
-  when not holoReaderDisableLineColumn:
-    if reader.state.doLineColumn:
-      if last == '\n' or (last == '\r' and peekOrZero(reader) != '\n'):
-        inc reader.state.line
-        reader.state.column = 1
-      else:
-        inc reader.state.column
+  reader.advance(reader.state, last)
   if reader.load.bufferLocks == 0: reader.load.buffer.freeBefore = prevPos
 
 proc unsafeNext*(reader: var LoadReader, last: Rune) {.inline.} =
   let prevPos = reader.state.pos
-  inc reader.state.pos
-  when not holoReaderDisableLineColumn:
-    if reader.state.doLineColumn:
-      if last == Rune('\n') or (last == Rune('\r') and peekOrZero(reader) != '\n'):
-        inc reader.state.line
-        reader.state.column = 1
-      else:
-        inc reader.state.column
+  reader.advance(reader.state, last, sizeof(last))
   if reader.load.bufferLocks == 0: reader.load.buffer.freeBefore = prevPos
 
 proc unsafeNextBy*(reader: var LoadReader, n: int) {.inline.} =
   # keep separate from next for now
-  let prevPos = reader.state.pos
-  let newPos = prevPos + n
-  reader.state.pos = newPos
-  when not holoReaderDisableLineColumn:
-    if reader.state.doLineColumn:
-      for i in prevPos + 1 ..< newPos:
-        let c = reader.currentBuffer[i]
-        if c == '\n' or (c == '\r' and reader.currentBuffer[i + 1] != '\n'):
-          inc reader.state.line
-          reader.state.column = 1
-        else:
-          inc reader.state.column
-      let cf = reader.currentBuffer[newPos]
-      if cf == '\n' or (cf == '\r' and peekOrZero(reader) != '\n'):
-        inc reader.state.line
-        reader.state.column = 1
-      else:
-        inc reader.state.column
-  if reader.load.bufferLocks == 0: reader.load.buffer.freeBefore = newPos - 1
+  reader.advanceBy(reader.state, n)
+  if reader.load.bufferLocks == 0: reader.load.buffer.freeBefore = reader.state.pos - 1
 
 proc next*(reader: var LoadReader, c: var char): bool {.inline.} =
   # keep separate from unsafeNext for now

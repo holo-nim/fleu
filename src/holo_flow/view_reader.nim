@@ -1,15 +1,22 @@
 import ./reader_common
 import std/unicode # just to expose API otherwise not used
 
+export doLineColumn, line, column
+
+when holoReaderDisableTracking:
+  type StateType = ReadState
+else:
+  type StateType = TrackedReadState
+
 when defined(js):
   type BufferView* = string
-  type StateView* = ref ReadState
+  type StateView* = ref StateType
 elif holoReaderUseViews:
   type BufferView* = cstring
-  type StateView* = var ReadState
+  type StateView* = var StateType
 else:
   type BufferView* = cstring
-  type StateView* = ptr ReadState
+  type StateView* = ptr StateType
 
 type
   ViewReader* = object
@@ -32,7 +39,7 @@ when defined(js):
   template currentBuffer*(reader: ViewReader): untyped =
     reader.bufferView
 
-  type State = ReadState
+  type State = StateType
   template state*(reader: ViewReader): State =
     reader.statePtr[]
   template `stateSource=`*(reader: ViewReader, s: State) =
@@ -62,16 +69,16 @@ else:
     Buffer(data: cast[ptr UncheckedArray[char]](reader.bufferView), len: reader.bufferViewLen)
 
   when StateView is ptr:
-    type State = var ReadState
-    template state*(reader: ViewReader): var ReadState =
+    type State = var StateType
+    template state*(reader: ViewReader): var StateType =
       reader.statePtr[]
     template `stateSource=`*(reader: var ViewReader, s: State) =
       reader.statePtr = addr s
     template `state=`*(reader: ViewReader, s: State) =
       reader.statePtr[] = s
   elif holoReaderUseViews:
-    type State = var ReadState
-    template state*(reader: ViewReader): var ReadState =
+    type State = var StateType
+    template state*(reader: ViewReader): var StateType =
       reader.statePtr
     template `stateSource=`*(reader: var ViewReader, s: State) =
       reader.statePtr = s
@@ -174,34 +181,10 @@ template lockBuffer*(reader: ViewReader) = discard
 template unlockBuffer*(reader: ViewReader) = discard
 
 proc unsafeNext*(reader: ViewReader) {.inline.} =
-  inc reader.bufferPos
-  when not holoReaderDisableLineColumn:
-    if reader.state.doLineColumn:
-      let c = reader.bufferView[reader.state.pos]
-      if c == '\n' or (c == '\r' and peekOrZero(reader) != '\n'):
-        inc reader.state.line
-        reader.state.column = 1
-      else:
-        inc reader.state.column
+  reader.advance(reader.state)
 
 proc unsafeNextBy*(reader: ViewReader, n: int) {.inline.} =
-  inc reader.bufferPos, n
-  when not holoReaderDisableLineColumn:
-    if reader.state.doLineColumn:
-      let newPos = reader.bufferPos
-      for i in newPos - n + 1 ..< newPos:
-        let c = reader.bufferView[i]
-        if c == '\n' or (c == '\r' and reader.bufferView[i + 1] != '\n'):
-          inc reader.state.line
-          reader.state.column = 1
-        else:
-          inc reader.state.column
-      let cf = reader.bufferView[newPos]
-      if cf == '\n' or (cf == '\r' and peekOrZero(reader) != '\n'):
-        inc reader.state.line
-        reader.state.column = 1
-      else:
-        inc reader.state.column
+  reader.advanceBy(reader.state, n)
 
 proc next*(reader: ViewReader, c: var char): bool {.inline.} =
   if not peek(reader, c):
