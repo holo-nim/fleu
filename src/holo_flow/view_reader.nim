@@ -33,6 +33,7 @@ else:
       TrackedStateView* = ptr TrackedReadState
 
 type
+  # XXX actually makes sense for view reader to be generic over state here
   ViewReader* = object
     ## reader over a string view, to reduce pointer dereferences
     bufferView*: BufferView

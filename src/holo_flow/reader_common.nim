@@ -3,9 +3,6 @@ import std/unicode
 const holoReaderLineColumn* {.booldefine.} = true
   ## enables/disables line column tracking by default for tracked state, has very little impact on performance
 
-const holoReaderDisableTracking* {.booldefine.} = false
-  ## completely disables line column tracking at compile time, overriding runtime option
-
 const holoReaderPeekStrCopyMem* {.booldefine.} = false
   ## possible minor optimization, seems slightly slower in practice 
 
