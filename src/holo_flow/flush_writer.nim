@@ -28,6 +28,10 @@ when declared(File):
     ## `file` has to last as long as the writer
     flush.buffer = initFlushBuffer(file, bufferCapacity)
 
+when false:
+  type WriterType = var FlushWriter
+  include writer_api
+
 proc startWrite*(writer: var FlushWriter, bufferCapacity = 16) {.inline.} =
   writer.flush.startFlush(bufferCapacity)
 

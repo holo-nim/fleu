@@ -7,6 +7,12 @@ const holoReaderDisableLineColumn* {.booldefine.} = false
 const holoReaderPeekStrCopyMem* {.booldefine.} = false
   ## possible minor optimization, seems slightly slower in practice 
 
+const experimentalViewsAvailable = compiles do:
+  var x: int
+  let y: var int = y
+
+const holoReaderUseViews* {.booldefine.} = experimentalViewsAvailable
+
 type
   ReadState* = object
     pos*: int

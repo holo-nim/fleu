@@ -4,16 +4,10 @@ import std/[streams, unicode] # just to expose API otherwise not used
 when holoReaderDisableLineColumn:
   export doLineColumn, line, column
 
-const experimentalViewsAvailable = compiles do:
-  var x: int
-  let y: var int = y
-
-const holoFlowViewReaderUseViews* {.booldefine.} = experimentalViewsAvailable
-
 when defined(js):
   type BufferView* = string
   type LoadReaderView* = ref LoadReader
-elif holoFlowViewReaderUseViews:
+elif holoReaderUseViews:
   type BufferView* = cstring
   type LoadReaderView* = var LoadReader
 else:
@@ -21,7 +15,7 @@ else:
   type LoadReaderView* = ptr LoadReader
 
 type
-  ViewReader* = object
+  LoadViewReader* = object
     ## view type over the `LoadReader` type,
     ## to reduce pointer dereferences
     bufferView*: BufferView
@@ -33,119 +27,119 @@ when defined(js):
   template jsRawSet(a, b) =
     {.emit: [a, " = ", b, ";"].}
 
-  template bufferViewLen*(reader: ViewReader): int =
+  template bufferViewLen*(reader: LoadViewReader): int =
     reader.bufferView.len
-  template `buffer=`*(reader: ViewReader, s: string) =
+  template `buffer=`*(reader: LoadViewReader, s: string) =
     jsRawSet(reader.bufferView, s)
-  template `buffer=`*(reader: ViewReader, s: typeof(nil)) =
+  template `buffer=`*(reader: LoadViewReader, s: typeof(nil)) =
     jsRawSet(reader.bufferView, "null")
   
-  proc cannotViewBuffer*(reader: ViewReader): bool {.inline.} =
+  proc cannotViewBuffer*(reader: LoadViewReader): bool {.inline.} =
     {.emit: [result, " = ", reader.bufferView, " === null;"].}
 
   type SourceReader = LoadReader
-  template source*(reader: ViewReader): LoadReader =
+  template source*(reader: LoadViewReader): LoadReader =
     reader.readerPtr[]
-  template `source=`*(reader: ViewReader, s: SourceReader) =
+  template `source=`*(reader: LoadViewReader, s: SourceReader) =
     jsRawSet(reader.readerPtr, s)
 elif LoadReaderView is ptr:
-  template `buffer=`*(reader: ViewReader, s: string) =
+  template `buffer=`*(reader: LoadViewReader, s: string) =
     reader.bufferView = cstring(s)
     reader.bufferViewLen = s.len
-  template `buffer=`*(reader: ViewReader, s: typeof(nil)) =
+  template `buffer=`*(reader: LoadViewReader, s: typeof(nil)) =
     reader.bufferView = nil
 
-  proc cannotViewBuffer*(reader: ViewReader): bool {.inline.} =
+  proc cannotViewBuffer*(reader: LoadViewReader): bool {.inline.} =
     result = reader.bufferView.isNil
 
   type SourceReader = var LoadReader
-  template source*(reader: ViewReader): var LoadReader =
+  template source*(reader: LoadViewReader): var LoadReader =
     reader.readerPtr[]
-  template `source=`*(reader: ViewReader, s: SourceReader) =
+  template `source=`*(reader: LoadViewReader, s: SourceReader) =
     reader.readerPtr = addr s
-elif holoFlowViewReaderUseViews:
-  template `buffer=`*(reader: ViewReader, s: string) =
+elif holoReaderUseViews:
+  template `buffer=`*(reader: LoadViewReader, s: string) =
     reader.bufferView = cstring(s)
     reader.bufferViewLen = s.len
-  template `buffer=`*(reader: ViewReader, s: typeof(nil)) =
+  template `buffer=`*(reader: LoadViewReader, s: typeof(nil)) =
     reader.bufferView = nil
 
-  proc cannotViewBuffer*(reader: ViewReader): bool {.inline.} =
+  proc cannotViewBuffer*(reader: LoadViewReader): bool {.inline.} =
     result = reader.bufferView.isNil
 
   type SourceReader = var LoadReader
-  template source*(reader: ViewReader): var LoadReader =
+  template source*(reader: LoadViewReader): var LoadReader =
     reader.readerPtr
-  template `source=`*(reader: ViewReader, s: SourceReader) =
+  template `source=`*(reader: LoadViewReader, s: SourceReader) =
     reader.readerPtr = s
 else:
   {.error: "unknown way to handle state type: " & $ReaderState.}
 
-template currentBuffer*(reader: ViewReader): string = reader.source.currentBuffer
-template bufferPos*(reader: ViewReader): int = reader.source.bufferPos
-template state*(reader: ViewReader): ReadState = reader.source.state
+template currentBuffer*(reader: LoadViewReader): string = reader.source.currentBuffer
+template bufferPos*(reader: LoadViewReader): int = reader.source.bufferPos
+template state*(reader: LoadViewReader): ReadState = reader.source.state
 
 {.push checks: off, stacktrace: off.}
 
-proc initViewReader*(original: SourceReader): ViewReader {.inline.} =
-  result = ViewReader()
+proc initLoadViewReader*(original: SourceReader): LoadViewReader {.inline.} =
+  result = LoadViewReader()
   result.source = original
 
-proc startRead*(reader: var ViewReader, str: sink string) {.inline.} =
+proc startRead*(reader: var LoadViewReader, str: sink string) {.inline.} =
   reader.source.startRead(str)
   reader.buffer = reader.source.currentBuffer
   inc reader.source.load.bufferLocks
 
-proc startRead*(reader: var ViewReader, loader: BufferLoader, bufferCapacity = 32) {.inline.} =
+proc startRead*(reader: var LoadViewReader, loader: BufferLoader, bufferCapacity = 32) {.inline.} =
   reader.source.startRead(loader, bufferCapacity)
   reader.buffer = nil
 
-proc startRead*(reader: var ViewReader, stream: Stream, loadAmount = 16, bufferCapacity = 32) {.inline.} =
+proc startRead*(reader: var LoadViewReader, stream: Stream, loadAmount = 16, bufferCapacity = 32) {.inline.} =
   reader.startRead(stream, loadAmount, bufferCapacity)
   reader.buffer = nil
 
 when declared(File):
-  proc startRead*(reader: var ViewReader, file: File, loadAmount = 16, bufferCapacity = 32) {.inline.} =
+  proc startRead*(reader: var LoadViewReader, file: File, loadAmount = 16, bufferCapacity = 32) {.inline.} =
     reader.startRead(file, loadAmount, bufferCapacity)
     reader.buffer = nil
 
-proc loadBufferOne*(reader: ViewReader) {.inline.} =
+proc loadBufferOne*(reader: LoadViewReader) {.inline.} =
   if reader.cannotViewBuffer:
     reader.source.callLoader()
 
-proc loadBufferBy*(reader: ViewReader, n: int) {.inline.} =
+proc loadBufferBy*(reader: LoadViewReader, n: int) {.inline.} =
   if reader.cannotViewBuffer:
     reader.source.callLoaderBy(n)
 
-proc peek*(reader: ViewReader, c: var char): bool {.inline.} =
+proc peek*(reader: LoadViewReader, c: var char): bool {.inline.} =
   if reader.cannotViewBuffer:
     result = reader.source.peek(c)
   else:
     let nextPos = reader.source.bufferPos + 1
     doPeek(reader.bufferView, reader.bufferViewLen, nextPos, c, result)
 
-proc unsafePeek*(reader: ViewReader): char {.inline.} =
+proc unsafePeek*(reader: LoadViewReader): char {.inline.} =
   if reader.cannotViewBuffer:
     result = reader.source.unsafePeek()
   else:
     # this is extra unsafe
     result = reader.bufferView[reader.source.bufferPos + 1]
 
-proc peek*(reader: ViewReader, c: var char, offset: int): bool {.inline.} =
+proc peek*(reader: LoadViewReader, c: var char, offset: int): bool {.inline.} =
   if reader.cannotViewBuffer:
     result = reader.source.peek(c, offset)
   else:
     let nextPos = reader.source.bufferPos + 1 + offset
     doPeek(reader.bufferView, reader.bufferViewLen, nextPos, c, result)
 
-proc unsafePeek*(reader: ViewReader, offset: int): char {.inline.} =
+proc unsafePeek*(reader: LoadViewReader, offset: int): char {.inline.} =
   if reader.cannotViewBuffer:
     result = reader.source.unsafePeek(offset)
   else:
     # this is extra unsafe
     result = reader.bufferView[reader.source.bufferPos + 1 + offset]
 
-proc peekCount*(reader: ViewReader, rune: var Rune): int {.inline.} =
+proc peekCount*(reader: LoadViewReader, rune: var Rune): int {.inline.} =
   ## returns rune size if rune is peeked
   if reader.cannotViewBuffer:
     result = reader.source.peekCount(rune)
@@ -172,10 +166,10 @@ proc peekCount*(reader: ViewReader, rune: var Rune): int {.inline.} =
         result = n
         fastRuneAt(reader.bufferView.toOpenArray(0, reader.bufferViewLen - 1), bpos + 1, rune, doInc = false)
 
-proc peek*(reader: ViewReader, rune: var Rune): bool {.inline.} =
+proc peek*(reader: LoadViewReader, rune: var Rune): bool {.inline.} =
   result = peekCount(reader, rune) != 0
 
-template peekStrImpl(reader: ViewReader, cs) =
+template peekStrImpl(reader: LoadViewReader, cs) =
   if reader.cannotViewBuffer:
     result = reader.source.peek(cs)
   else:
@@ -194,74 +188,74 @@ template peekStrImpl(reader: ViewReader, cs) =
         else:
           copyMem(addr cs[0], addr reader.bufferView[bpos + 1], n)
 
-proc peek*(reader: ViewReader, cs: var openArray[char]): bool {.inline.} =
+proc peek*(reader: LoadViewReader, cs: var openArray[char]): bool {.inline.} =
   peekStrImpl(reader, cs)
 
-proc peek*[I](reader: ViewReader, cs: var array[I, char]): bool {.inline.} =
+proc peek*[I](reader: LoadViewReader, cs: var array[I, char]): bool {.inline.} =
   peekStrImpl(reader, cs)
 
-proc peekOrZero*(reader: ViewReader): char {.inline.} =
+proc peekOrZero*(reader: LoadViewReader): char {.inline.} =
   if not peek(reader, result):
     result = '\0'
 
-proc hasNext*(reader: ViewReader): bool {.inline.} =
+proc hasNext*(reader: LoadViewReader): bool {.inline.} =
   var dummy: char
   result = peek(reader, dummy)
 
-proc hasNext*(reader: ViewReader, offset: int): bool {.inline.} =
+proc hasNext*(reader: LoadViewReader, offset: int): bool {.inline.} =
   var dummy: char
   result = peek(reader, dummy, offset)
 
-proc lockBuffer*(reader: ViewReader) {.inline.} =
+proc lockBuffer*(reader: LoadViewReader) {.inline.} =
   if reader.cannotViewBuffer:
     reader.source.lockBuffer()
 
-proc unlockBuffer*(reader: ViewReader) {.inline.} =
+proc unlockBuffer*(reader: LoadViewReader) {.inline.} =
   if reader.cannotViewBuffer:
     reader.source.unlockBuffer()
 
-proc unsafeNext*(reader: ViewReader) {.inline.} =
+proc unsafeNext*(reader: LoadViewReader) {.inline.} =
   reader.source.unsafeNext()
 
-proc unsafeNextBy*(reader: ViewReader, n: int) {.inline.} =
+proc unsafeNextBy*(reader: LoadViewReader, n: int) {.inline.} =
   reader.source.unsafeNextBy(n)
 
-proc next*(reader: ViewReader, c: var char): bool {.inline.} =
+proc next*(reader: LoadViewReader, c: var char): bool {.inline.} =
   if not peek(reader, c):
     return false
   result = true
   reader.source.unsafeNext(last = c)
 
-proc next*(reader: ViewReader, rune: var Rune): bool {.inline.} =
+proc next*(reader: LoadViewReader, rune: var Rune): bool {.inline.} =
   let size = peekCount(reader, rune)
   if size == 0:
     return false
   result = true
   reader.source.unsafeNext(last = rune)
 
-proc next*(reader: ViewReader): bool {.inline.} =
+proc next*(reader: LoadViewReader): bool {.inline.} =
   var dummy: char
   result = next(reader, dummy)
 
-iterator peekNext*(reader: ViewReader): char =
+iterator peekNext*(reader: LoadViewReader): char =
   var c: char
   while reader.peek(c):
     yield c
     reader.unsafeNext()
 
-proc peekMatch*(reader: ViewReader, c: char): bool {.inline.} =
+proc peekMatch*(reader: LoadViewReader, c: char): bool {.inline.} =
   var c2: char
   if reader.peek(c2) and c2 == c:
     result = true
   else:
     result = false
 
-proc nextMatch*(reader: ViewReader, c: char): bool {.inline.} =
+proc nextMatch*(reader: LoadViewReader, c: char): bool {.inline.} =
   result = peekMatch(reader, c)
   if result:
     reader.unsafeNext()
 
-proc peekMatch*(reader: ViewReader, c: char, offset: int): bool {.inline.} =
+proc peekMatch*(reader: LoadViewReader, c: char, offset: int): bool {.inline.} =
   if reader.cannotViewBuffer:
     result = reader.source.peekMatch(c, offset)
   else:
@@ -273,38 +267,38 @@ proc peekMatch*(reader: ViewReader, c: char, offset: int): bool {.inline.} =
     else:
       result = false
 
-proc peekMatch*(reader: ViewReader, rune: Rune): bool {.inline.} =
+proc peekMatch*(reader: LoadViewReader, rune: Rune): bool {.inline.} =
   var rune2: Rune
   if reader.peek(rune2) and rune2 == rune:
     result = true
   else:
     result = false
 
-proc nextMatch*(reader: ViewReader, rune: Rune): bool {.inline.} =
+proc nextMatch*(reader: LoadViewReader, rune: Rune): bool {.inline.} =
   result = peekMatch(reader, rune)
   if result:
     reader.unsafeNextBy(size(rune))
 
-proc peekMatch*(reader: ViewReader, cs: set[char], c: var char): bool {.inline.} =
+proc peekMatch*(reader: LoadViewReader, cs: set[char], c: var char): bool {.inline.} =
   if reader.peek(c) and c in cs:
     result = true
   else:
     result = false
 
-proc nextMatch*(reader: ViewReader, cs: set[char], c: var char): bool {.inline.} =
+proc nextMatch*(reader: LoadViewReader, cs: set[char], c: var char): bool {.inline.} =
   result = peekMatch(reader, cs, c)
   if result:
     reader.unsafeNext()
 
-proc peekMatch*(reader: ViewReader, cs: set[char]): bool {.inline.} =
+proc peekMatch*(reader: LoadViewReader, cs: set[char]): bool {.inline.} =
   var dummy: char
   result = reader.peekMatch(cs, dummy)
 
-proc nextMatch*(reader: ViewReader, cs: set[char]): bool {.inline.} =
+proc nextMatch*(reader: LoadViewReader, cs: set[char]): bool {.inline.} =
   var dummy: char
   result = reader.nextMatch(cs, dummy)
 
-proc peekMatch*(reader: ViewReader, cs: set[char], offset: int, c: var char): bool {.inline.} =
+proc peekMatch*(reader: LoadViewReader, cs: set[char], offset: int, c: var char): bool {.inline.} =
   if reader.cannotViewBuffer:
     result = reader.source.peekMatch(cs, offset, c)
   else:
@@ -318,11 +312,11 @@ proc peekMatch*(reader: ViewReader, cs: set[char], offset: int, c: var char): bo
     else:
       result = false
 
-proc peekMatch*(reader: ViewReader, cs: set[char], offset: int): bool {.inline.} =
+proc peekMatch*(reader: LoadViewReader, cs: set[char], offset: int): bool {.inline.} =
   var dummy: char
   result = reader.peekMatch(cs, offset, dummy)
 
-template peekMatchStrImpl(reader: ViewReader, str) =
+template peekMatchStrImpl(reader: LoadViewReader, str) =
   if reader.cannotViewBuffer:
     result = reader.source.peekMatch(str)
   else:
@@ -335,27 +329,27 @@ template peekMatchStrImpl(reader: ViewReader, str) =
     else:
       result = false
 
-proc peekMatch*(reader: ViewReader, str: openArray[char]): bool {.inline.} =
+proc peekMatch*(reader: LoadViewReader, str: openArray[char]): bool {.inline.} =
   peekMatchStrImpl(reader, str)
 
-proc peekMatch*[I](reader: ViewReader, str: array[I, char]): bool {.inline.} =
+proc peekMatch*[I](reader: LoadViewReader, str: array[I, char]): bool {.inline.} =
   peekMatchStrImpl(reader, str)
 
-proc peekMatch*(reader: ViewReader, str: static string): bool {.inline.} =
+proc peekMatch*(reader: LoadViewReader, str: static string): bool {.inline.} =
   # maybe make a const array
   peekMatchStrImpl(reader, str)
 
-proc nextMatch*(reader: ViewReader, str: openArray[char]): bool {.inline.} =
+proc nextMatch*(reader: LoadViewReader, str: openArray[char]): bool {.inline.} =
   result = peekMatch(reader, str)
   if result:
     reader.unsafeNextBy(str.len)
 
-proc nextMatch*[I](reader: ViewReader, str: array[I, char]): bool {.inline.} =
+proc nextMatch*[I](reader: LoadViewReader, str: array[I, char]): bool {.inline.} =
   result = peekMatch(reader, str)
   if result:
     reader.unsafeNextBy(str.len)
 
-proc nextMatch*(reader: ViewReader, str: static string): bool {.inline.} =
+proc nextMatch*(reader: LoadViewReader, str: static string): bool {.inline.} =
   result = peekMatch(reader, str)
   if result:
     reader.unsafeNextBy(str.len)

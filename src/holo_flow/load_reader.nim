@@ -35,6 +35,10 @@ when declared(File):
     load.buffer = initLoadBuffer(file, loadAmount, bufferCapacity)
     load.bufferLocks = 0
 
+when false:
+  type ReaderType = var LoadReader
+  include reader_api
+
 proc startRead*(reader: var LoadReader, str: sink string) {.inline.} =
   startLoad(reader.load, str)
   startRead(reader.state)
