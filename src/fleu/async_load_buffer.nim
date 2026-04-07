@@ -68,7 +68,7 @@ proc callLoader*(buffer: var AsyncLoadBuffer): Future[int] {.async.} =
   let ex = await buffer.loader()
   if ex.len == 0:
     buffer.loader = nil
-    return
+    return result
   let moved = buffer.data.smartResizeAdd(ex, buffer.freeBefore)
   if moved:
     result = buffer.freeBefore
@@ -85,18 +85,26 @@ proc callLoaderBy*(buffer: var AsyncLoadBuffer, n: int): Future[int] {.async.} =
   ## for internal use, only called if buffer loader is known not to be nil
   ## returns number of moved chars
   # probably better not to inline
-  result = 0
+  when defined(js):
+    # https://github.com/nim-lang/Nim/issues/25716
+    {.push warning[ResultShadowed]: off.}
+    var result = 0
+    {.pop.}
+  else:
+    result = 0
   var left = n
   while left > 0:
     let ex = await buffer.loader()
     if ex.len == 0:
       buffer.loader = nil
-      return
+      return result
     let moved = buffer.data.smartResizeAdd(ex, buffer.freeBefore)
     if moved:
       result += buffer.freeBefore
       buffer.freeBefore = 0
     left -= ex.len
+  when defined(js):
+    return result
 
 proc loadBy*(buffer: var AsyncLoadBuffer, n: int): Future[int] {.async.} =
   ## returns number of moved chars

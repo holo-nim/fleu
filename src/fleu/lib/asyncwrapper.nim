@@ -1,4 +1,4 @@
-const asyncBackend {.strdefine.} = ""
+const asyncBackend {.strdefine, used.} = ""
 
 when defined(js):
   import std/asyncjs

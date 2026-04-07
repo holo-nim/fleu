@@ -116,10 +116,20 @@ proc consumeFull*(buffer: var AsyncFlushBuffer) {.async.} =
   if not buffer.consumer.isNil:
     await callConsumerFull(buffer)
 
-proc callConsumerEnd*(buffer: var AsyncFlushBuffer) {.inline.} =
-  ## for internal use, only called if buffer consumer is known not to be nil
-  asyncCheck buffer.consumer([])
-  buffer.consumer = nil
+when defined(js):
+  # no asyncCheck in js
+  proc callConsumerEndImpl(buffer: var AsyncFlushBuffer) {.async.} =
+    ## for internal use, only called if buffer consumer is known not to be nil
+    let consumer = buffer.consumer
+    buffer.consumer = nil
+    discard await consumer([])
+  template callConsumerEnd*(buffer: var AsyncFlushBuffer) =
+    await callConsumerEndImpl(buffer)
+else:
+  proc callConsumerEnd*(buffer: var AsyncFlushBuffer) {.inline.} =
+    ## for internal use, only called if buffer consumer is known not to be nil
+    asyncCheck buffer.consumer([])
+    buffer.consumer = nil
 
 proc endFlush*(buffer: var AsyncFlushBuffer) {.async.} =
   ## signals to consumer the end of flushing, leaves remaining buffer
