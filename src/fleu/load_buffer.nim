@@ -30,6 +30,7 @@ when declared(File):
     ## `file` has to last as long as the reader
     var buf = newString(loadAmount) # save allocations by capturing this in the loader, array would need constant load amount
     let loader = proc (): string =
+      buf.setLen(loadAmount)
       let n = readChars(file, buf)
       buf.setLen(n)
       result = buf
