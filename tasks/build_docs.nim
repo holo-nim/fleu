@@ -12,8 +12,8 @@ import std/[os, strutils]
 
 let srcDir = "src"
 var files: seq[FilePath] = @[]
-for dirs in [srcDir, srcDir / "fleu"]: # ignore includes dir
-  for kind, f in walkDir(srcDir):
+for dir in [srcDir, srcDir / "fleu"]: # ignore includes dir
+  for kind, f in walkDir(dir):
     if kind == pcFile and f.endsWith(".nim"):
       files.add f
 buildDocs(files, gitUrl = "https://github.com/holo-nim/fleu", rootDir = srcDir)
