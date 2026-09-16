@@ -2,7 +2,7 @@ import ./stringresize
 import std/streams  # just to expose API otherwise not used
 
 type
-  BufferLoader* = proc (): string
+  BufferLoader* = proc (): string {.gcsafe.}
   LoadBuffer* = object
     data*: string
       ## buffer string, users need to access directly & keep track of position

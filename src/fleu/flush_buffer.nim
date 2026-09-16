@@ -2,7 +2,7 @@ import ./stringresize
 import std/[streams, unicode] # just to expose API otherwise not used
 
 type
-  BufferConsumer* = proc (x: openArray[char]): int
+  BufferConsumer* = proc (x: openArray[char]): int {.gcsafe.}
   FlushBuffer* = object
     data*: string
     consumer*: BufferConsumer
