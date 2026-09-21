@@ -25,6 +25,7 @@ proc smartResizeAdd*(s: var string, a: openArray[char], freeBefore: int): bool {
     result = false
   else:
     if freeBefore != 0 and s.len + a.len > s.capacity:
+      # XXX splice for js
       let realSLen = s.len - freeBefore
       for i in 0 ..< realSLen:
         s[i] = s[i + freeBefore]
@@ -45,6 +46,7 @@ proc smartResizeAdd*(s: var string, a: char, freeBefore: int): bool {.inline.} =
     result = false
   else:
     if freeBefore != 0 and s.len + 1 > s.capacity:
+      # XXX splice for js
       let realSLen = s.len - freeBefore
       for i in 0 ..< realSLen:
         s[i] = s[i + freeBefore]
