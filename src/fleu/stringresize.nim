@@ -16,6 +16,9 @@ when not declared(capacity):
 
 {.push checks: off, stacktrace: off.}
 
+when defined(js):
+  proc splice(a: string, start: int, deleteCount: int) {.importjs: "#.splice(@)".}
+
 proc smartResizeAdd*(s: var string, a: openArray[char], freeBefore: int): bool {.inline.} =
   ## adds `a` to `s`; if operation would result in resize, deletes characters
   ## before `freeBefore` and returns `true`, otherwise returns `false`
@@ -25,10 +28,16 @@ proc smartResizeAdd*(s: var string, a: openArray[char], freeBefore: int): bool {
     result = false
   else:
     if freeBefore != 0 and s.len + a.len > s.capacity:
-      # XXX splice for js
       let realSLen = s.len - freeBefore
-      for i in 0 ..< realSLen:
-        s[i] = s[i + freeBefore]
+      when nimvm:
+        for i in 0 ..< realSLen:
+          s[i] = s[i + freeBefore]
+      else:
+        when defined(js):
+          s.splice(0, freeBefore)
+        else:
+          for i in 0 ..< realSLen:
+            s[i] = s[i + freeBefore]
       s.setLen(realSLen + a.len)
       for i in 0 ..< a.len:
         s[i + realSLen] = a[i]
@@ -40,16 +49,22 @@ proc smartResizeAdd*(s: var string, a: openArray[char], freeBefore: int): bool {
 proc smartResizeAdd*(s: var string, a: char, freeBefore: int): bool {.inline.} =
   ## adds `a` to `s`; if operation would result in resize, deletes characters
   ## before `freeBefore` and returns `true`, otherwise returns `false`
-  when nimvm:
+  when false:
     # shim previously used for nimscript/vm/js
     s.add(a)
     result = false
   else:
     if freeBefore != 0 and s.len + 1 > s.capacity:
-      # XXX splice for js
       let realSLen = s.len - freeBefore
-      for i in 0 ..< realSLen:
-        s[i] = s[i + freeBefore]
+      when nimvm:
+        for i in 0 ..< realSLen:
+          s[i] = s[i + freeBefore]
+      else:
+        when defined(js):
+          s.splice(0, freeBefore)
+        else:
+          for i in 0 ..< realSLen:
+            s[i] = s[i + freeBefore]
       s.setLen(realSLen + 1)
       s[realSLen] = a
       result = true
