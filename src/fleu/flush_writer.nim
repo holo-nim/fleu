@@ -98,14 +98,29 @@ proc setIndent*(writer: var IndentFlushWriter, level: int) {.inline.} =
 proc hasIndent*(writer: var IndentFlushWriter): bool {.inline.} =
   writer.state.level > 0
 
-proc checkIndent(writer: var IndentFlushWriter, c: char) =
-  if c in Newlines:
+proc checkIndent(writer: var IndentFlushWriter, newline: bool) {.inline.} =
+  if newline:
     writer.state.atLineStart = true
   else:
-    if writer.state.atLineStart:
+    if writer.state.atLineStart and writer.state.level > 0:
+      let oldLen = writer.currentBuffer.len
+      writer.currentBuffer.setLen(oldLen + writer.state.level)
       for i in 0 ..< writer.state.level:
-        writer.flush.buffer.add ' '
+        writer.currentBuffer[oldLen + i] = ' '
     writer.state.atLineStart = false
+
+proc checkIndent(writer: var IndentFlushWriter, c: char) =
+  checkIndent(writer, c in Newlines)
+
+proc maybeInsertIndent*(writer: var IndentFlushWriter, c: char) {.inline.} =
+  ## inserts indent before the character `c` if it is the first character in the current line
+  if writer.hasIndent:
+    checkIndent(writer, c)
+
+proc maybeInsertIndent*(writer: var IndentFlushWriter, isNewline = false) {.inline.} =
+  ## inserts indent if the next character would be the first character in the current line
+  if writer.hasIndent:
+    checkIndent(writer, isNewline)
 
 proc addToBuffer*(writer: var IndentFlushWriter, c: char) {.inline.} =
   if writer.hasIndent:
