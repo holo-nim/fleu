@@ -51,36 +51,37 @@ proc loadBy*(reader: var LoadReaderType, n: int) {.inline.} =
   if not reader.load.buffer.loader.isNil:
     callLoaderBy(reader, n)
 
-proc peekAfterLoadCall*(reader: var LoadReaderType, nextPos: int, c: var char): bool =
+proc peekAfterLoadCall*(reader: var LoadReaderType, c: var char): bool =
   ## for internal use, only called if buffer loader is known not to be nil
   callLoader(reader)
-  doPeek(reader.currentBuffer, reader.currentBuffer.len, nextPos, c, result)
+  doPeek(reader.currentBuffer, reader.currentBuffer.len, reader.state.pos + 1, c, result)
 
 proc peek*(reader: var LoadReaderType, c: var char): bool {.inline.} =
   doPeek(reader.currentBuffer, reader.currentBuffer.len, reader.state.pos + 1, c, result)
   if not result and not reader.load.buffer.loader.isNil:
-    result = peekAfterLoadCall(reader, reader.state.pos + 1, c)
+    result = peekAfterLoadCall(reader, c)
 
 proc unsafePeek*(reader: var LoadReaderType): char {.inline.} =
   result = reader.currentBuffer[reader.state.pos + 1]
 
-proc peekAfterLoadCallBy*(reader: var LoadReaderType, n: int, nextPos: int, c: var char): bool =
+proc peekAfterLoadCallBy*(reader: var LoadReaderType, offset: int, c: var char): bool =
   ## for internal use, only called if buffer loader is known not to be nil
-  callLoaderBy(reader, n)
-  doPeek(reader.currentBuffer, reader.currentBuffer.len, nextPos, c, result)
+  callLoaderBy(reader, reader.state.pos + 2 + offset - reader.currentBuffer.len)
+  doPeek(reader.currentBuffer, reader.currentBuffer.len, reader.state.pos + 1 + offset, c, result)
 
 proc peek*(reader: var LoadReaderType, c: var char, offset: int): bool {.inline.} =
   doPeek(reader.currentBuffer, reader.currentBuffer.len, reader.state.pos + 1 + offset, c, result)
   if not result and not reader.load.buffer.loader.isNil:
-    result = peekAfterLoadCallBy(reader, 1 + offset, reader.state.pos + 1 + offset, c)
+    result = peekAfterLoadCallBy(reader, offset, c)
 
 proc unsafePeek*(reader: var LoadReaderType, offset: int): char {.inline.} =
   result = reader.currentBuffer[reader.state.pos + 1 + offset]
 
 template prepareBuffer(reader: var LoadReaderType, n: int, offset = 0) =
   if not reader.load.buffer.loader.isNil:
-    if reader.state.pos + n + offset >= reader.currentBuffer.len:
-      callLoaderBy(reader, n)
+    let diff = reader.state.pos + n + offset - reader.currentBuffer.len
+    if diff >= 0:
+      callLoaderBy(reader, diff + 1)
 
 proc peekCount*(reader: var LoadReaderType, rune: var Rune): int {.inline.} =
   ## returns rune size if rune is peeked
