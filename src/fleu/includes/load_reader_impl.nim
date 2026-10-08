@@ -57,10 +57,9 @@ proc peekAfterLoadCall*(reader: var LoadReaderType, nextPos: int, c: var char): 
   doPeek(reader.currentBuffer, reader.currentBuffer.len, nextPos, c, result)
 
 proc peek*(reader: var LoadReaderType, c: var char): bool {.inline.} =
-  let nextPos = reader.state.pos + 1
-  doPeek(reader.currentBuffer, reader.currentBuffer.len, nextPos, c, result)
+  doPeek(reader.currentBuffer, reader.currentBuffer.len, reader.state.pos + 1, c, result)
   if not result and not reader.load.buffer.loader.isNil:
-    result = peekAfterLoadCall(reader, nextPos, c)
+    result = peekAfterLoadCall(reader, reader.state.pos + 1, c)
 
 proc unsafePeek*(reader: var LoadReaderType): char {.inline.} =
   result = reader.currentBuffer[reader.state.pos + 1]
@@ -71,10 +70,9 @@ proc peekAfterLoadCallBy*(reader: var LoadReaderType, n: int, nextPos: int, c: v
   doPeek(reader.currentBuffer, reader.currentBuffer.len, nextPos, c, result)
 
 proc peek*(reader: var LoadReaderType, c: var char, offset: int): bool {.inline.} =
-  let nextPos = reader.state.pos + 1 + offset
-  doPeek(reader.currentBuffer, reader.currentBuffer.len, nextPos, c, result)
+  doPeek(reader.currentBuffer, reader.currentBuffer.len, reader.state.pos + 1 + offset, c, result)
   if not result and not reader.load.buffer.loader.isNil:
-    result = peekAfterLoadCallBy(reader, 1 + offset, nextPos, c)
+    result = peekAfterLoadCallBy(reader, 1 + offset, reader.state.pos + 1 + offset, c)
 
 proc unsafePeek*(reader: var LoadReaderType, offset: int): char {.inline.} =
   result = reader.currentBuffer[reader.state.pos + 1 + offset]
